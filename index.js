@@ -55,7 +55,7 @@ app.get('/api/properties', async (req, res) => {
 });
 
 // Mise à jour automatique toutes les 6 heures
-setInterval(fetchAndCacheProperties, 6 * 60 * 60 * 1000);
+setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 
 // Charger les données une première fois au démarrage
 fetchAndCacheProperties();
