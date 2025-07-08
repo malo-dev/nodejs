@@ -6,44 +6,61 @@ const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
-app.use(cors()); // plus simple que headers manuels
+app.use(cors());
 
-app.get('/api/properties', async (req, res) => {
+let cachedProperties = [];
+let lastUpdated = null;
+
+// Fonction pour charger les données XML et les parser
+async function fetchAndCacheProperties() {
   try {
+    console.log('🔄 Récupération des données XML en cours...');
     const xmlUrl = 'https://spain.metainmo.com/storage/feeds/kyero/13cadf90-267a-4ef6-9bc3-548164c3db4f.xml';
-
     const response = await axios.get(xmlUrl, { responseType: 'text' });
 
-    const xmlData = response.data;
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    const jsonData = parser.parse(response.data);
+    cachedProperties = jsonData.root?.property || [];
+    lastUpdated = new Date();
 
-    const parser = new XMLParser({
-      ignoreAttributes: false,
-      attributeNamePrefix: '@_',
-    });
+    console.log(`✅ Données mises en cache (${cachedProperties.length} propriétés) à ${lastUpdated.toLocaleString()}`);
+  } catch (error) {
+    console.error('❌ Erreur de chargement du XML :', error.message);
+  }
+}
 
-    const jsonData = parser.parse(xmlData);
+// Requête API avec pagination
+app.get('/api/properties', async (req, res) => {
+  try {
+    if (cachedProperties.length === 0) {
+      await fetchAndCacheProperties();
+    }
 
-    const allProperties = jsonData.root?.property || [];
-
-    // Pagination
     const page = parseInt(req.query.page, 10) || 1;
     const limit = parseInt(req.query.limit, 10) || 6;
-
     const startIndex = (page - 1) * limit;
-    const paginatedProperties = allProperties.slice(startIndex, startIndex + limit);
+    const paginated = cachedProperties.slice(startIndex, startIndex + limit);
 
     res.json({
-      total: allProperties.length,
+      total: cachedProperties.length,
       page,
       limit,
-      properties: paginatedProperties,
+      properties: paginated,
+      lastUpdated,
     });
   } catch (error) {
-    console.error('❌ Erreur XML:', error.message);
-    res.status(500).json({ error: 'Impossible de récupérer les propriétés.' });
+    console.error('❌ Erreur API:', error.message);
+    res.status(500).json({ error: 'Erreur interne du serveur.' });
   }
 });
 
+// Mise à jour automatique toutes les 6 heures
+setInterval(fetchAndCacheProperties, 6 * 60 * 60 * 1000);
+
+// Charger les données une première fois au démarrage
+fetchAndCacheProperties();
+
+// Démarrage du serveur
 app.listen(PORT, () => {
-  console.log(`🚀 Serveur Express lancé sur http://localhost:${PORT}`);
+  console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
 });
