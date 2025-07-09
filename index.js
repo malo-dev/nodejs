@@ -60,6 +60,28 @@ setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 // Charger les données une première fois au démarrage
 fetchAndCacheProperties();
 
+
+// Nouvelle route pour les filtres dynamiques
+app.get('/api/properties/filters', (req, res) => {
+  if (!cachedProperties.length) {
+    return res.status(503).json({ error: 'Data not loaded yet' });
+  }
+
+  const countries = new Set();
+  const provinces = new Set();
+
+  cachedProperties.forEach(prop => {
+    if (prop.country) countries.add(prop.country.trim());
+    if (prop.province) provinces.add(prop.province.trim());
+  });
+
+  res.json({
+    countries: Array.from(countries).sort(),
+    provinces: Array.from(provinces).sort()
+  });
+});
+
+
 // Démarrage du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
