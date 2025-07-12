@@ -86,6 +86,15 @@ app.get('/api/properties', async (req, res) => {
       results = results.filter(p => parseFloat(p.price?.value || 0) <= max);
     }
 
+
+    if (req.query.search) {
+  const searchLower = req.query.search.toLowerCase();
+  results = results.filter(p =>
+    p.town?.toLowerCase().includes(searchLower) ||
+    p.country?.toLowerCase().includes(searchLower)
+  );
+}
+
     const total = results.length;
     const startIndex = (parseInt(page) - 1) * parseInt(limit);
     const paginated = results.slice(startIndex, startIndex + parseInt(limit));
