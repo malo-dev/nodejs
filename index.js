@@ -125,6 +125,8 @@ app.get('/api/properties/filters', (req, res) => {
     return res.status(503).json({ error: 'Données non encore chargées.' });
   }
 
+  
+
   const countries = new Set();
   const provinces = new Set();
   const towns = new Set();
