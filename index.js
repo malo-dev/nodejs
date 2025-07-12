@@ -71,20 +71,23 @@ app.get('/api/properties', async (req, res) => {
       });
     }
 
+  
+
+
     if (bedrooms) {
-      const minBedrooms = parseInt(bedrooms, 10);
-      results = results.filter(p => parseInt(p.bedrooms, 10) >= minBedrooms);
-    }
+  const minBedrooms = parseInt(bedrooms.toString().trim());
+  results = results.filter(p => parseInt(p.bedrooms || p.beds || 0) >= minBedrooms);
+}
 
-    if (priceMin) {
-      const min = parseFloat(priceMin);
-      results = results.filter(p => parseFloat(p.price?.value || 0) >= min);
-    }
+if (priceMin) {
+  const min = parseFloat(priceMin.toString().trim());
+  results = results.filter(p => parseFloat(p.price?.value || p.price || 0) >= min);
+}
 
-    if (priceMax) {
-      const max = parseFloat(priceMax);
-      results = results.filter(p => parseFloat(p.price?.value || 0) <= max);
-    }
+if (priceMax) {
+  const max = parseFloat(priceMax.toString().trim());
+  results = results.filter(p => parseFloat(p.price?.value || p.price || 0) <= max);
+}
 
     if (req.query.search) {
       const searchLower = req.query.search.toLowerCase();
