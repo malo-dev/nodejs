@@ -29,39 +29,88 @@ async function fetchAndCacheProperties() {
   }
 }
 
-// Requête API avec pagination
+// Requête API avec pagination et filtres
 app.get('/api/properties', async (req, res) => {
   try {
     if (cachedProperties.length === 0) {
       await fetchAndCacheProperties();
     }
 
-    const page = parseInt(req.query.page, 10) || 1;
-    const limit = parseInt(req.query.limit, 10) || 6;
-    const startIndex = (page - 1) * limit;
-    const paginated = cachedProperties.slice(startIndex, startIndex + limit);
+    let results = [...cachedProperties];
+
+    // Filtres
+    const {
+      country,
+      province,
+      town,
+      pool,
+      bedrooms,
+      priceMin,
+      priceMax,
+      page = 1,
+      limit = 6
+    } = req.query;
+
+    if (country) {
+      results = results.filter(p => p.country?.toLowerCase() === country.toLowerCase());
+    }
+
+    if (province) {
+      results = results.filter(p => p.province?.toLowerCase() === province.toLowerCase());
+    }
+
+    if (town) {
+      results = results.filter(p => p.town?.toLowerCase() === town.toLowerCase());
+    }
+
+    if (pool) {
+      const hasPool = pool.toLowerCase() === 'true';
+      results = results.filter(p => {
+        const poolVal = p.features?.includes('pool') || p.pool === 'yes';
+        return hasPool ? poolVal : !poolVal;
+      });
+    }
+
+    if (bedrooms) {
+      const minBedrooms = parseInt(bedrooms, 10);
+      results = results.filter(p => parseInt(p.bedrooms, 10) >= minBedrooms);
+    }
+
+    if (priceMin) {
+      const min = parseFloat(priceMin);
+      results = results.filter(p => parseFloat(p.price?.value || 0) >= min);
+    }
+
+    if (priceMax) {
+      const max = parseFloat(priceMax);
+      results = results.filter(p => parseFloat(p.price?.value || 0) <= max);
+    }
+
+    const total = results.length;
+    const startIndex = (parseInt(page) - 1) * parseInt(limit);
+    const paginated = results.slice(startIndex, startIndex + parseInt(limit));
 
     res.json({
-      total: cachedProperties.length,
-      page,
-      limit,
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
       properties: paginated,
       lastUpdated,
     });
+
   } catch (error) {
     console.error('❌ Erreur API:', error.message);
     res.status(500).json({ error: 'Erreur interne du serveur.' });
   }
 });
 
-// Mise à jour automatique toutes les 6 heures
+// Mise à jour automatique toutes les 48 heures
 setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 
 // Charger les données une première fois au démarrage
 fetchAndCacheProperties();
 
-
-// Nouvelle route pour les filtres dynamiques
+// Route pour les valeurs de filtres disponibles
 app.get('/api/properties/filters', (req, res) => {
   if (!cachedProperties.length) {
     return res.status(503).json({ error: 'Data not loaded yet' });
@@ -69,18 +118,23 @@ app.get('/api/properties/filters', (req, res) => {
 
   const countries = new Set();
   const provinces = new Set();
+  const towns = new Set();
+  const bedrooms = new Set();
 
   cachedProperties.forEach(prop => {
     if (prop.country) countries.add(prop.country.trim());
     if (prop.province) provinces.add(prop.province.trim());
+    if (prop.town) towns.add(prop.town.trim());
+    if (prop.bedrooms) bedrooms.add(prop.bedrooms.trim());
   });
 
   res.json({
     countries: Array.from(countries).sort(),
-    provinces: Array.from(provinces).sort()
+    provinces: Array.from(provinces).sort(),
+    towns: Array.from(towns).sort(),
+    bedrooms: Array.from(bedrooms).sort((a, b) => parseInt(a) - parseInt(b))
   });
 });
-
 
 // Démarrage du serveur
 app.listen(PORT, () => {
