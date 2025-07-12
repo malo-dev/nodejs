@@ -86,15 +86,18 @@ app.get('/api/properties', async (req, res) => {
       results = results.filter(p => parseFloat(p.price?.value || 0) <= max);
     }
 
-
     if (req.query.search) {
-  const searchLower = req.query.search.toLowerCase();
-  results = results.filter(p =>
-    p.town?.toLowerCase().includes(searchLower) ||
-    p.country?.toLowerCase().includes(searchLower)
-  );
-}
+      const searchLower = req.query.search.toLowerCase();
+      results = results.filter(p =>
+        p.town?.toLowerCase().includes(searchLower) ||
+        p.country?.toLowerCase().includes(searchLower)
+      );
+    }
 
+    // 🔀 Mélange aléatoire après filtrage
+    results = results.sort(() => Math.random() - 0.5);
+
+    // Pagination
     const total = results.length;
     const startIndex = (parseInt(page) - 1) * parseInt(limit);
     const paginated = results.slice(startIndex, startIndex + parseInt(limit));
@@ -113,19 +116,11 @@ app.get('/api/properties', async (req, res) => {
   }
 });
 
-// Mise à jour automatique toutes les 48 heures
-setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
-
-// Charger les données une première fois au démarrage
-fetchAndCacheProperties();
-
 // Route pour les valeurs de filtres disponibles
 app.get('/api/properties/filters', (req, res) => {
   if (!cachedProperties.length) {
     return res.status(503).json({ error: 'Données non encore chargées.' });
   }
-
-  
 
   const countries = new Set();
   const provinces = new Set();
@@ -150,8 +145,13 @@ app.get('/api/properties/filters', (req, res) => {
   });
 });
 
+// Mise à jour automatique toutes les 48 heures
+setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 
-// Démarrage du serveur
+// Chargement initial au démarrage
+fetchAndCacheProperties();
+
+// Lancement du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
 });
