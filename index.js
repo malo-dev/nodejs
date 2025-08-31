@@ -1,10 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { XMLParser } = require('fast-xml-parser');
-
 const cors = require('cors');
-const compression = require('compression');
-app.use(compression());
 
 const app = express();
 const PORT = 3000;
@@ -155,13 +152,9 @@ app.get('/api/properties/filters', (req, res) => {
 setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 
 // Chargement initial au démarrage
-fetchAndCacheProperties().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
-  });
-});
+fetchAndCacheProperties();
 
 // Lancement du serveur
-// app.listen(PORT, () => {
-//   console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
-// });
+app.listen(PORT, () => {
+  console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
+});
