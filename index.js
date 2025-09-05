@@ -149,7 +149,7 @@ app.get('/api/properties/filters', (req, res) => {
 });
 
 // Mise à jour automatique toutes les 48 heures
-setInterval(fetchAndCacheProperties, 60 * 60 * 1000);
+// setInterval(fetchAndCacheProperties, 60 * 60 * 1000);
 
 // Chargement initial au démarrage
 fetchAndCacheProperties();
