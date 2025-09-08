@@ -48,7 +48,7 @@ app.get('/api/properties', async (req, res) => {
       priceMin,
       priceMax,
       page = 1,
-      limit = 6
+      limit = 12
     } = req.query;
 
     if (country) {
