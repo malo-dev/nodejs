@@ -149,11 +149,12 @@ app.get('/api/properties/filters', (req, res) => {
 });
 
 // Mise à jour automatique toutes les 48 heures
-setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
+
 
 // Chargement initial au démarrage
 fetchAndCacheProperties();
 
+setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 // Lancement du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
