@@ -118,6 +118,30 @@ if (priceMax) {
     res.status(500).json({ error: 'Erreur interne du serveur.' });
   }
 });
+// Route pour récupérer une propriété par son ID
+app.get('/api/properties/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Si le cache est vide, on le recharge
+    if (cachedProperties.length === 0) {
+      await fetchAndCacheProperties();
+    }
+
+    // Cherche la propriété avec cet ID
+    const property = cachedProperties.find(p => p.id === id || String(p.id) === id);
+
+    if (!property) {
+      return res.status(404).json({ error: 'Propriété non trouvée.' });
+    }
+
+    res.json({ property });
+  } catch (error) {
+    console.error('❌ Erreur API par ID:', error.message);
+    res.status(500).json({ error: 'Erreur interne du serveur.' });
+  }
+});
+
 
 // Route pour les valeurs de filtres disponibles
 app.get('/api/properties/filters', (req, res) => {
