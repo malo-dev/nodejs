@@ -118,6 +118,35 @@ if (priceMax) {
     res.status(500).json({ error: 'Erreur interne du serveur.' });
   }
 });
+
+// Route pour les valeurs de filtres disponibles
+app.get('/api/properties/filters', (req, res) => {
+  if (!cachedProperties.length) {
+    return res.status(503).json({ error: 'Données non encore chargées.' });
+  }
+
+  const countries = new Set();
+  const provinces = new Set();
+  const towns = new Set();
+  const bedrooms = new Set();
+  const types = new Set();
+
+  cachedProperties.forEach(prop => {
+    if (prop.country) countries.add(prop.country.trim());
+    if (prop.province) provinces.add(prop.province.trim());
+    if (prop.town) towns.add(prop.town.trim());
+    if (prop.bedrooms) bedrooms.add(String(prop.bedrooms).trim());
+    if (prop.type) types.add(prop.type.trim());
+  });
+
+  res.json({
+    countries: Array.from(countries).sort(),
+    provinces: Array.from(provinces).sort(),
+    towns: Array.from(towns).sort(),
+    bedrooms: Array.from(bedrooms).sort((a, b) => parseInt(a) - parseInt(b)),
+    types: Array.from(types).sort()
+  });
+});
 // Route pour récupérer une propriété par son ID
 app.get('/api/properties/:id', async (req, res) => {
   try {
