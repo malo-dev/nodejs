@@ -10,9 +10,12 @@ app.use(cors());
 
 let cachedProperties = [];
 let lastUpdated = null;
+let isFetching = false;
 
 // Fonction pour charger les données XML et les parser
 async function fetchAndCacheProperties() {
+  if (isFetching) return; // éviter les fetchs concurrents
+  isFetching = true;
   try {
     console.log('🔄 Récupération des données XML en cours...');
     const xmlUrl = 'https://spain.metainmo.com/storage/feeds/kyero/13cadf90-267a-4ef6-9bc3-548164c3db4f.xml';
@@ -26,155 +29,95 @@ async function fetchAndCacheProperties() {
     console.log(`✅ Données mises en cache (${cachedProperties.length} propriétés) à ${lastUpdated.toLocaleString()}`);
   } catch (error) {
     console.error('❌ Erreur de chargement du XML :', error.message);
+  } finally {
+    isFetching = false;
   }
 }
 
-// Requête API avec pagination et filtres
+// 🔹 Chargement initial en arrière-plan
+fetchAndCacheProperties();
+setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000); // toutes les 48h
+
+// Helper pour filtrer les propriétés
+function filterProperties(properties, query) {
+  let results = [...properties];
+  const { country, province, town, pool, bedrooms, priceMin, priceMax, search } = query;
+
+  if (country) results = results.filter(p => p.country?.toLowerCase() === country.toLowerCase());
+  if (province) results = results.filter(p => p.province?.toLowerCase() === province.toLowerCase());
+  if (town) results = results.filter(p => p.town?.toLowerCase() === town.toLowerCase());
+
+  if (pool) {
+    const hasPool = pool.toLowerCase() === 'true';
+    results = results.filter(p => {
+      const poolVal = p.features?.includes('pool') || p.pool === 'yes';
+      return hasPool ? poolVal : !poolVal;
+    });
+  }
+
+  if (bedrooms) {
+    const minBedrooms = parseInt(bedrooms.toString().trim());
+    results = results.filter(p => parseInt(p.bedrooms || p.beds || 0) >= minBedrooms);
+  }
+
+  if (priceMin) {
+    const min = parseFloat(priceMin.toString().trim());
+    results = results.filter(p => parseFloat(p.price?.value || p.price || 0) >= min);
+  }
+
+  if (priceMax) {
+    const max = parseFloat(priceMax.toString().trim());
+    results = results.filter(p => parseFloat(p.price?.value || p.price || 0) <= max);
+  }
+
+  if (search) {
+    const searchLower = search.toLowerCase();
+    results = results.filter(p =>
+      p.town?.toLowerCase().includes(searchLower) ||
+      p.country?.toLowerCase().includes(searchLower)
+    );
+  }
+
+  return results;
+}
+
+// 🔹 Endpoint pour récupérer les propriétés
 app.get('/api/properties', async (req, res) => {
   try {
+    // Si le cache est vide, on déclenche un fetch en arrière-plan mais on ne bloque pas la requête
     if (cachedProperties.length === 0) {
-      await fetchAndCacheProperties();
+      fetchAndCacheProperties();
+      return res.status(503).json({ error: 'Données en cours de chargement, réessayez dans quelques secondes.' });
     }
 
-    let results = [...cachedProperties];
-
-    // Filtres
-    const {
-      country,
-      province,
-      town,
-      pool,
-      bedrooms,
-      priceMin,
-      priceMax,
-      page = 1,
-      limit = 12
-    } = req.query;
-
-    if (country) {
-      results = results.filter(p => p.country?.toLowerCase() === country.toLowerCase());
-    }
-
-    if (province) {
-      results = results.filter(p => p.province?.toLowerCase() === province.toLowerCase());
-    }
-
-    if (town) {
-      results = results.filter(p => p.town?.toLowerCase() === town.toLowerCase());
-    }
-
-    if (pool) {
-      const hasPool = pool.toLowerCase() === 'true';
-      results = results.filter(p => {
-        const poolVal = p.features?.includes('pool') || p.pool === 'yes';
-        return hasPool ? poolVal : !poolVal;
-      });
-    }
-
-  
-
-
-    if (bedrooms) {
-  const minBedrooms = parseInt(bedrooms.toString().trim());
-  results = results.filter(p => parseInt(p.bedrooms || p.beds || 0) >= minBedrooms);
-}
-
-if (priceMin) {
-  const min = parseFloat(priceMin.toString().trim());
-  results = results.filter(p => parseFloat(p.price?.value || p.price || 0) >= min);
-}
-
-if (priceMax) {
-  const max = parseFloat(priceMax.toString().trim());
-  results = results.filter(p => parseFloat(p.price?.value || p.price || 0) <= max);
-}
-
-    if (req.query.search) {
-      const searchLower = req.query.search.toLowerCase();
-      results = results.filter(p =>
-        p.town?.toLowerCase().includes(searchLower) ||
-        p.country?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // 🔀 Mélange aléatoire après filtrage
-    results = results.sort(() => Math.random() - 0.5);
+    let results = filterProperties(cachedProperties, req.query);
 
     // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 12;
     const total = results.length;
-    const startIndex = (parseInt(page) - 1) * parseInt(limit);
-    const paginated = results.slice(startIndex, startIndex + parseInt(limit));
+    const startIndex = (page - 1) * limit;
+    const paginated = results.slice(startIndex, startIndex + limit);
+
+    // Mélange uniquement la page affichée
+    paginated.sort(() => Math.random() - 0.5);
 
     res.json({
       total,
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page,
+      limit,
       properties: paginated,
       lastUpdated,
     });
-
   } catch (error) {
     console.error('❌ Erreur API:', error.message);
     res.status(500).json({ error: 'Erreur interne du serveur.' });
   }
 });
 
-// Route pour les valeurs de filtres disponibles
+// 🔹 Endpoint pour les filtres disponibles
 app.get('/api/properties/filters', (req, res) => {
-  if (!cachedProperties.length) {
-    return res.status(503).json({ error: 'Données non encore chargées.' });
-  }
-
-  const countries = new Set();
-  const provinces = new Set();
-  const towns = new Set();
-  const bedrooms = new Set();
-  const types = new Set();
-
-  cachedProperties.forEach(prop => {
-    if (prop.country) countries.add(prop.country.trim());
-    if (prop.province) provinces.add(prop.province.trim());
-    if (prop.town) towns.add(prop.town.trim());
-    if (prop.bedrooms) bedrooms.add(String(prop.bedrooms).trim());
-    if (prop.type) types.add(prop.type.trim());
-  });
-
-  res.json({
-    countries: Array.from(countries).sort(),
-    provinces: Array.from(provinces).sort(),
-    towns: Array.from(towns).sort(),
-    bedrooms: Array.from(bedrooms).sort((a, b) => parseInt(a) - parseInt(b)),
-    types: Array.from(types).sort()
-  });
-});
-// Route pour récupérer une propriété par son ID
-app.get('/api/properties/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    // Si le cache est vide, on le recharge
-    if (cachedProperties.length === 0) {
-      await fetchAndCacheProperties();
-    }
-
-    // Cherche la propriété avec cet ID
-    const property = cachedProperties.find(p => p.id === id || String(p.id) === id);
-
-    if (!property) {
-      return res.status(404).json({ error: 'Propriété non trouvée.' });
-    }
-
-    res.json({ property });
-  } catch (error) {
-    console.error('❌ Erreur API par ID:', error.message);
-    res.status(500).json({ error: 'Erreur interne du serveur.' });
-  }
-});
-
-
-// Route pour les valeurs de filtres disponibles
-app.get('/api/properties/filters', (req, res) => {
-  if (!cachedProperties.length) {
+  if (cachedProperties.length === 0) {
     return res.status(503).json({ error: 'Données non encore chargées.' });
   }
 
@@ -201,14 +144,25 @@ app.get('/api/properties/filters', (req, res) => {
   });
 });
 
-// Mise à jour automatique toutes les 48 heures
+// 🔹 Endpoint pour récupérer une propriété par ID
+app.get('/api/properties/:id', (req, res) => {
+  const { id } = req.params;
 
+  if (cachedProperties.length === 0) {
+    fetchAndCacheProperties();
+    return res.status(503).json({ error: 'Données en cours de chargement, réessayez dans quelques secondes.' });
+  }
 
-// Chargement initial au démarrage
-fetchAndCacheProperties();
+  const property = cachedProperties.find(p => p.id === id || String(p.id) === id);
 
-setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
-// Lancement du serveur
+  if (!property) {
+    return res.status(404).json({ error: 'Propriété non trouvée.' });
+  }
+
+  res.json({ property });
+});
+
+// 🔹 Lancement du serveur
 app.listen(PORT, () => {
   console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
 });
