@@ -40,7 +40,7 @@ fetchAndCacheProperties();
 setInterval(fetchAndCacheProperties, 48 * 60 * 60 * 1000);
 
 // ─────────────────────────────────────────────
-// 🔹 CACHE — Tesoro MLS (JSON)
+// 🔹 CACHE — Tesoro MLS (XML → JSON normalisé)
 // ─────────────────────────────────────────────
 let cachedTesoroProperties = [];
 let tesoroLastUpdated = null;
@@ -48,36 +48,100 @@ let isFetchingTesoro = false;
 
 const TESORO_URL = 'https://api.tesoro.estate/mls/mls/export/68d3b7ba15f66b3f94019ec2';
 
+/**
+ * Normalise une propriété XML Kyero en objet JSON uniforme,
+ * identique à ce que renverrait une API JSON native.
+ */
+function normalizeTesoroProperty(p) {
+  // Images : fast-xml-parser renvoie un objet ou un tableau selon le nombre d'images
+  const rawImages = p.images?.image || [];
+  const imagesArray = Array.isArray(rawImages) ? rawImages : [rawImages];
+  const images = imagesArray.map(img => ({
+    id: img['@_id'] || null,
+    url: img.url || null,
+  }));
+
+  // Features : idem
+  const rawFeatures = p.features?.feature || [];
+  const features = Array.isArray(rawFeatures) ? rawFeatures : [rawFeatures];
+
+  // URLs multilingues
+  const urls = p.url || {};
+
+  // Description multilingue
+  const desc = p.desc || {};
+
+  return {
+    id: String(p.id ?? ''),
+    ref: p.ref || null,
+    date: p.date || null,
+
+    // Prix
+    price: parseFloat(p.price) || 0,
+    currency: p.currency || 'EUR',
+    price_freq: p.price_freq || 'sale',
+
+    // Localisation
+    country: p.country || null,
+    province: p.province || null,
+    town: p.town || null,
+    location_detail: p.location_detail || null,
+
+    // Type & caractéristiques
+    type: p.type || null,
+    new_build: p.new_build === 1 || p.new_build === '1' || p.new_build === true || false,
+    part_ownership: p.part_ownership === 1 || p.part_ownership === '1' || false,
+    leasehold: p.leasehold === 1 || p.leasehold === '1' || false,
+
+    // Pièces
+    beds: parseInt(p.beds ?? p.bedrooms ?? 0),
+    baths: parseInt(p.baths ?? p.bathrooms ?? 0),
+    pool: p.pool === 1 || p.pool === '1' || p.pool === 'yes' || false,
+
+    // Surface
+    surface_area: {
+      built: parseFloat(p.surface_area?.built) || null,
+      plot: parseFloat(p.surface_area?.plot) || null,
+    },
+
+    // Énergie
+    energy_rating: {
+      consumption: p.energy_rating?.consumption || null,
+      emissions: p.energy_rating?.emissions || null,
+    },
+
+    // Contenu
+    description: desc,
+    features,
+    images,
+    urls,
+
+    // Divers
+    email: p.email || null,
+    prime: p.prime === 1 || p.prime === '1' || false,
+  };
+}
+
 async function fetchAndCacheTesoroProperties() {
   if (isFetchingTesoro) return;
   isFetchingTesoro = true;
   try {
-    console.log('🔄 [Tesoro] Récupération des données MLS en cours...');
+    console.log('🔄 [Tesoro] Récupération des données XML en cours...');
     const response = await axios.get(TESORO_URL, {
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      },
+      responseType: 'text',
       timeout: 15000,
     });
 
-    // L'API peut renvoyer un tableau directement ou un objet avec une clé
-    const raw = response.data;
-    if (Array.isArray(raw)) {
-      cachedTesoroProperties = raw;
-    } else if (raw.properties && Array.isArray(raw.properties)) {
-      cachedTesoroProperties = raw.properties;
-    } else if (raw.data && Array.isArray(raw.data)) {
-      cachedTesoroProperties = raw.data;
-    } else if (raw.items && Array.isArray(raw.items)) {
-      cachedTesoroProperties = raw.items;
-    } else {
-      // Fallback : on prend la première valeur tableau trouvée
-      const firstArray = Object.values(raw).find(v => Array.isArray(v));
-      cachedTesoroProperties = firstArray || [];
-    }
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
+    const jsonData = parser.parse(response.data);
 
+    // Support tableau ou objet unique
+    const raw = jsonData.root?.property || [];
+    const rawArray = Array.isArray(raw) ? raw : [raw];
+
+    cachedTesoroProperties = rawArray.map(normalizeTesoroProperty);
     tesoroLastUpdated = new Date();
+
     console.log(`✅ [Tesoro] ${cachedTesoroProperties.length} propriétés en cache à ${tesoroLastUpdated.toLocaleString()}`);
   } catch (error) {
     console.error('❌ [Tesoro] Erreur de chargement :', error.message);
@@ -137,77 +201,46 @@ function filterProperties(properties, query) {
 }
 
 /**
- * Filtre générique pour Tesoro MLS.
- * Les noms de champs peuvent varier selon la réponse réelle de l'API ;
- * on couvre les cas courants avec des fallbacks.
+ * Filtre Tesoro - utilise les champs normalises par normalizeTesoroProperty().
  */
 function filterTesoroProperties(properties, query) {
   let results = [...properties];
   const { country, province, town, pool, bedrooms, priceMin, priceMax, type, search } = query;
 
-  const str = (val) => (val ?? '').toString().toLowerCase().trim();
+  const s = (val) => (val ?? '').toString().toLowerCase().trim();
 
-  if (country) results = results.filter(p =>
-    str(p.country) === country.toLowerCase() ||
-    str(p.location?.country) === country.toLowerCase()
-  );
-
-  if (province) results = results.filter(p =>
-    str(p.province) === province.toLowerCase() ||
-    str(p.region) === province.toLowerCase() ||
-    str(p.location?.province) === province.toLowerCase()
-  );
-
-  if (town) results = results.filter(p =>
-    str(p.town) === town.toLowerCase() ||
-    str(p.city) === town.toLowerCase() ||
-    str(p.location?.city) === town.toLowerCase()
-  );
-
-  if (type) results = results.filter(p =>
-    str(p.type) === type.toLowerCase() ||
-    str(p.property_type) === type.toLowerCase()
-  );
+  if (country)  results = results.filter(p => s(p.country) === country.toLowerCase());
+  if (province) results = results.filter(p => s(p.province) === province.toLowerCase());
+  if (town)     results = results.filter(p => s(p.town) === town.toLowerCase());
+  if (type)     results = results.filter(p => s(p.type) === type.toLowerCase());
 
   if (pool !== undefined && pool !== '') {
     const hasPool = pool.toLowerCase() === 'true';
-    results = results.filter(p => {
-      const v = p.pool ?? p.features?.pool ?? p.amenities?.pool;
-      const poolVal = v === true || v === 1 || str(v) === 'yes' || str(v) === 'true';
-      return hasPool ? poolVal : !poolVal;
-    });
+    results = results.filter(p => hasPool ? p.pool === true : p.pool === false);
   }
 
   if (bedrooms) {
     const min = parseInt(bedrooms.toString().trim());
-    results = results.filter(p =>
-      parseInt(p.bedrooms ?? p.beds ?? p.rooms?.bedrooms ?? 0) >= min
-    );
+    results = results.filter(p => p.beds >= min);
   }
 
   if (priceMin) {
     const min = parseFloat(priceMin.toString().trim());
-    results = results.filter(p =>
-      parseFloat(p.price ?? p.price_value ?? p.pricing?.price ?? 0) >= min
-    );
+    results = results.filter(p => p.price >= min);
   }
 
   if (priceMax) {
     const max = parseFloat(priceMax.toString().trim());
-    results = results.filter(p =>
-      parseFloat(p.price ?? p.price_value ?? p.pricing?.price ?? 0) <= max
-    );
+    results = results.filter(p => p.price <= max);
   }
 
   if (search) {
-    const s = search.toLowerCase();
+    const q = search.toLowerCase();
     results = results.filter(p =>
-      str(p.town).includes(s) ||
-      str(p.city).includes(s) ||
-      str(p.country).includes(s) ||
-      str(p.title).includes(s) ||
-      str(p.description).includes(s) ||
-      str(p.location?.city).includes(s)
+      s(p.town).includes(q) ||
+      s(p.country).includes(q) ||
+      s(p.province).includes(q) ||
+      s(p.type).includes(q)
     );
   }
 
@@ -342,18 +375,12 @@ app.get('/api/tesoro/properties/filters', (req, res) => {
   const bedrooms = new Set();
   const types = new Set();
 
-  cachedTesoroProperties.forEach(prop => {
-    const c = prop.country || prop.location?.country;
-    const prov = prop.province || prop.region || prop.location?.province;
-    const t = prop.town || prop.city || prop.location?.city;
-    const b = prop.bedrooms ?? prop.beds ?? prop.rooms?.bedrooms;
-    const ty = prop.type || prop.property_type;
-
-    if (c) countries.add(String(c).trim());
-    if (prov) provinces.add(String(prov).trim());
-    if (t) towns.add(String(t).trim());
-    if (b !== undefined && b !== null) bedrooms.add(String(b).trim());
-    if (ty) types.add(String(ty).trim());
+  cachedTesoroProperties.forEach(p => {
+    if (p.country)  countries.add(p.country);
+    if (p.province) provinces.add(p.province);
+    if (p.town)     towns.add(p.town);
+    if (p.beds)     bedrooms.add(String(p.beds));
+    if (p.type)     types.add(p.type);
   });
 
   res.json({
