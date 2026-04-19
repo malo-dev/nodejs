@@ -20,7 +20,7 @@ async function fetchAndCacheProperties() {
   isFetching = true;
   try {
     console.log('🔄 [MetaInmo] Récupération des données XML en cours...');
-    const xmlUrl = 'https://spain.metainmo.com/storage/feeds/kyero/13cadf90-267a-4ef6-9bc3-548164c3db4f.xml';
+    const xmlUrl = 'https://spain.metainmo.com/storage/feeds/kyero/231241cd-c326-4d6b-8b92-74bce81bce94.xml';
     const response = await axios.get(xmlUrl, { responseType: 'text' });
 
     const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
